@@ -1,3 +1,4 @@
+use crate::fmt;
 use std::{ffi::OsString, path::PathBuf, process::Command};
 
 use log::trace;
@@ -36,6 +37,16 @@ pub enum DeleteMethod {
     /// - Does *not* show the "Put Back" option, BUT replaces it with a custom one.
     Direct,
 }
+impl fmt::Display for DeleteMethod {
+    fn fmt(&self, f:&mut fmt::Formatter) -> fmt::Result {
+        match self {
+            DeleteMethod::Finder        => write!(f,"Finder"),
+            DeleteMethod::NsFileManager => write!(f,"NsFileManager"),
+            DeleteMethod::Direct        => write!(f,"Direct"),
+        }
+    }
+}
+
 impl DeleteMethod {
     /// Returns `DeleteMethod::Finder`
     pub const fn new() -> Self {
