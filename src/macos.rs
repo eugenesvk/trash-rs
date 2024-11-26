@@ -27,6 +27,14 @@ pub enum DeleteMethod {
     ///   - <https://github.com/sindresorhus/macos-trash/issues/4>
     ///   - <https://github.com/ArturKovacs/trash-rs/issues/14>
     NsFileManager,
+
+    /// Use Rust std library to delete the files, storing original paths as extended attributes.
+    ///
+    /// - Somewhat faster than the `Finder` method
+    /// - Does *not* require additional permissions
+    /// - Does *not* produce the sound that Finder usually makes when deleting a file
+    /// - Does *not* show the "Put Back" option, BUT replaces it with a custom one.
+    Direct,
 }
 impl DeleteMethod {
     /// Returns `DeleteMethod::Finder`
@@ -66,6 +74,7 @@ impl TrashContext {
         match self.platform_specific.delete_method {
             DeleteMethod::Finder => delete_using_finder(full_paths),
             DeleteMethod::NsFileManager => delete_using_file_mgr(full_paths),
+            DeleteMethod::Direct => delete_directly(full_paths),
         }
     }
 }
