@@ -113,6 +113,30 @@ fn delete_using_file_mgr(full_paths: Vec<String>) -> Result<(), Error> {
     Ok(())
 }
 
+// TODO replace
+fn delete_directly(full_paths: Vec<String>) -> Result<(), Error> {
+    trace!("Starting delete_using_file_mgr");
+    let file_mgr = unsafe { NSFileManager::defaultManager() };
+    for path in full_paths {
+        let string = NSString::from_str(&path);
+
+        trace!("Starting fileURLWithPath");
+        let url = unsafe { NSURL::fileURLWithPath(&string) };
+        trace!("Finished fileURLWithPath");
+
+        trace!("Calling trashItemAtURL");
+        let res = unsafe { file_mgr.trashItemAtURL_resultingItemURL_error(&url, None) };
+        trace!("Finished trashItemAtURL");
+
+        if let Err(err) = res {
+            return Err(Error::Unknown {
+                description: format!("While deleting '{path}', `trashItemAtURL` failed: {err}"),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn delete_using_finder(full_paths: Vec<String>) -> Result<(), Error> {
     // AppleScript command to move files (or directories) to Trash looks like
     //   osascript -e 'tell application "Finder" to delete { POSIX file "file1", POSIX "file2" }'
