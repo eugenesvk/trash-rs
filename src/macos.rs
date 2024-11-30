@@ -1,5 +1,8 @@
 #![cfg_attr(not(debug_assertions),allow(non_snake_case,non_upper_case_globals,non_camel_case_types))]
 #![cfg_attr(    debug_assertions ,allow(non_snake_case,non_upper_case_globals,non_camel_case_types,unused_imports,unused_mut,unused_variables,dead_code,unused_assignments,unused_macros))]
+use objc2_foundation::NSArray;
+use objc2_foundation::NSData;
+use objc2_foundation::NSDirectoryEnumerator;
 use objc2::runtime::AnyObject;
 use objc2_foundation::{NSUTF8StringEncoding,NSShiftJISStringEncoding};
 use crate::fmt;
@@ -149,16 +152,16 @@ pub fn delete_using_file_mgr_oss<P:AsRef<Path>>(full_paths: &[P]) -> Result<(), 
 
 // todo: still fails with pjis
         // let pre:&str = "/Volumes/Untitled/ピ";
-        let bja8 = [0xe3,0x83,0x94]; //227 131 148
-        let bjis = [     0x83,0x73]; //    131 115
-        let jis:&OsStr = OsStr::from_bytes(&bjis);
-        let mut p:PathBuf = PathBuf::new(); p.push("/Volumes/Untitled"); p.push(jis); let pjis = p;
-        if pjis.is_file() {println!("pjis is a file! {:?}",pjis);}
-        let prenbjis:&[u8] = pjis.as_os_str().as_bytes();
-        let cstring = CString::new(prenbjis).expect("CString::new failed to create from given path");
-        let cstring_len = cstring.count_bytes();
-        println!("pre={:?}\nc{}={:?}",&prenbjis,cstring_len,&cstring); //c20="/Volumes/Untitled/\x83s"
-        let nncstring = NonNull::new(cstring.into_raw()).expect("REASON");
+        // let bja8 = [0xe3,0x83,0x94]; //227 131 148
+        // let bjis = [     0x83,0x73]; //    131 115
+        // let jis:&OsStr = OsStr::from_bytes(&bjis);
+        // let mut p:PathBuf = PathBuf::new(); p.push("/Volumes/Untitled"); p.push(jis); let pjis = p;
+        // if pjis.is_file() {println!("pjis is a file! {:?}",pjis);}
+        // let prenbjis:&[u8] = pjis.as_os_str().as_bytes();
+        // let cstring = CString::new(prenbjis).expect("CString::new failed to create from given path");
+        // let cstring_len = cstring.count_bytes();
+        // println!("pre={:?}\nc{}={:?}",&prenbjis,cstring_len,&cstring); //c20="/Volumes/Untitled/\x83s"
+        // let nncstring = NonNull::new(cstring.into_raw()).expect("REASON");
 
         use objc2_foundation::NSCharacterSet;
         let valid_charset: Retained<NSCharacterSet> = unsafe { NSCharacterSet::URLPathAllowedCharacterSet() };
@@ -176,13 +179,109 @@ pub fn delete_using_file_mgr_oss<P:AsRef<Path>>(full_paths: &[P]) -> Result<(), 
           // println!("nsstring stringWithCString (anyobj)={:?} class={:?}",&anyobj,anyobj.class()); //<__NSCFString: 0x600001b50700>
           // no method// let anyobj_percent:Option<Retained<NSString>> = unsafe {anyobj.stringByAddingPercentEncodingWithAllowedCharacters(&valid_charset)};
 
+/*
 
 // try to use binary data to create URL
-  use objc2_foundation::NSData;
-  let nsdata   	:Ret<NSData  >	= NSData::with_bytes(&prenbjis)                                        	;
+  let pparent = "/Volumes/Untitled";
+  let url_parent:Ret<NSString> = NSString::from_str(&pparent);
+  let url = unsafe { NSURL::fileURLWithPath(&url_parent) };
+  if let Ok(enm) = unsafe {file_mgr.contentsOfDirectoryAtPath_error(&url_parent)} { // :Ret<NSArray<NSString>>
+    println!("path@{url_parent:?}");
+    for p in enm {
+      let pnoperc = unsafe{p.stringByRemovingPercentEncoding()};
+      println!("  {} = {:?}",p,pnoperc)};
+      let out = r#"
+        path@"/Volumes/Untitled"
+        %83s          = None
+        %F8           = None
+        .fseventsd    = Some(".fseventsd")
+        .Trashes      = Some(".Trashes")
+        ←%F8 %F8;?:&= = None
+        ヒ\u{309a}    = Some("ヒ\u{309a}")"#;
+  }
+  use percent_encoding::{percent_encode, AsciiSet, NON_ALPHANUMERIC, CONTROLS};
+  // assert_eq!(percent_encode(b"foo bar?", NON_ALPHANUMERIC).to_string(), "foo%20bar%3F");
+  let bdia:&[u8] = b"/Volumes/Untitled/\xf8"; //ø
+  // const FRAGMENT: &AsciiSet = AsciiSet::new(); //&b' ';
+  let sdia_per = percent_encode(bdia, CONTROLS).to_string(); // /Volumes/Untitled/%F8
+  let sdia_peralpha = percent_encode(bdia, NON_ALPHANUMERIC).to_string(); // %2FVolumes%2FUntitled%2F%F8
+  println!("bdia={bdia:?}\n%str ={sdia_per}\n%strα={sdia_peralpha}");
+  let new_s:Allocated<NSString> = NSString::alloc();
+  // let nsdata	:Ret<NSData  >	= NSData::with_bytes(bdia)	;
+  let nsdata   	:Ret<NSData  >	= NSData::with_bytes(sdia_per.as_bytes());
+  let nsstring :Ret<NSString> = unsafe{NSString::initWithData_encoding(new_s,&nsdata, NSUTF8StringEncoding)}.expect("✗✗ initWithData_encoding");
+  let string_pc	:Ret<NSString>	= unsafe{nsstring.stringByAddingPercentEncodingWithAllowedCharacters(&NSCharacterSet::URLPathAllowedCharacterSet())}.expect("e"); //
+
+  let url_s	:Ret<NSURL   >	= unsafe{NSURL::fileURLWithPath(&nsstring) }	;
+  let res_s	              	= unsafe{file_mgr.trashItemAtURL_resultingItemURL_error(&url_s, None) };//
+  let err_s = match res_s {Ok(())=>format!("ok"), Err(err)=>format!("{err}"),};
+
+  let url_p	:Ret<NSURL   >	= unsafe{NSURL::fileURLWithPath(&string_pc) }	;
+  let res_p	              	= unsafe{file_mgr.trashItemAtURL_resultingItemURL_error(&url_p, None) };// file “%25F8” doesn’t exist
+  let err_p = match res_p {Ok(())=>format!("ok"), Err(err)=>format!("{err}"),};
+  println!("NSString initWithData_encoding UTF8:\nstr_ns={nsstring:?}\nstr_% = {string_pc}\nurl_s={url_s:?}\nurl_p={url_p:?}\nerr_s={err_s}\nerr_p={err_p}");
+*/
+/*
+path@"/Volumes/Untitled"
+  %F8 = None
+  .fseventsd = Some(".fseventsd")
+  .Trashes = Some(".Trashes")
+bdia=[47, 86, 111, 108, 117, 109, 101, 115, 47, 85, 110, 116, 105, 116, 108, 101, 100, 47, 248]
+%str =/Volumes/Untitled/%F8
+%strα=%2FVolumes%2FUntitled%2F%F8
+NSString initWithData_encoding UTF8:
+str_ns="/Volumes/Untitled/%F8"
+str_% = /Volumes/Untitled/%25F8
+url_s=NSURL { __superclass: file:///Volumes/Untitled/%2525F8 }
+res_s=The file “%25F8” doesn’t exist.
+ */
+
+
+/*
+1. Accepts bytes, but messes up % encoding, %C2%83 for \x83. Also, this isn't paths
+fn URLWithDataRepresentation_relativeToURL(data:&NSData, base_url:Option<&NSURL>) -> Retained<NSURL>
+2. %encodes invalid chars, but accepts string, not data
+fn URLWithString_encodingInvalidCharacters(url_string:&NSString, encoding_invalid_characters:bool) -> Option<Retained<Self>>
+3. CORRECT for producing file URLs, but acceps NSString
+fn fileURLWithPath(path: &NSString) -> Retained<NSURL>
+??? how to get NSString replacing invalid chars with %???
+
+ */
+
+
+
+  let bdia:&[u8] = b"\xf8"; //248 ø
+  // let bdia = b"\x80"; // 128 lone continuation byte (invalid utf8)
+  let dia:&OsStr = OsStr::from_bytes(bdia);
+  let mut p:PathBuf = PathBuf::new(); p.push("/Volumes/Untitled"); p.push(dia); let pdia = p;
+  if pdia.is_file() {println!("pdia is a file! {:?}",pdia);} // /Volumes/Untitled/\xF8
+  let prenbpdia:&[u8] = pdia.as_os_str().as_bytes();
+  let cstring = CString::new(prenbpdia).expect("CString::new failed to create from given path");
+  let cstring_len = cstring.count_bytes();
+  println!("pre={:?}\nc{}={:?}",&prenbpdia,cstring_len,&cstring); //c19="/Volumes/Untitled/\xf8"
+  let nncstring = NonNull::new(cstring.into_raw()).expect("REASON");
+  // code point	character	UTF-8(hex.)	name
+  // U+00F8    	ø        	c3 b8      	LATIN SMALL LETTER O WITH STROKE
+  let nsdata   	:Ret<NSData  >	= NSData::with_bytes(&prenbpdia)                                       	;
+
+
+  // let nstypeid = NSString::from_str("NSString");
+  // let nss = unsafe{NSString::objectWithItemProviderData_typeIdentifier_error(&nsdata,&nstypeid)};
+  // println!("{:?}",nss);
+  // Ret<NSString   >
+// unsafe fn objectWithItemProviderData_typeIdentifier_error(
+//     data: &NSData,
+//     type_identifier: &NSString
+// ) -> Result<Retained<Self>, Retained<NSError>>
+
+
+
+
+
+
   let url_d    	:Ret<NSURL   >	= unsafe{NSURL::URLWithDataRepresentation_relativeToURL(&nsdata,None) }	;// /Volumes/Untitled/%C2%83s
   let url_path 	:Ret<NSString>	= unsafe{url_d.path()}.expect("p")                                     	;// /Volumes/Untitled/\u{83}s
-  let string_pc	:Ret<NSString>	= unsafe{url_path.stringByAddingPercentEncodingWithAllowedCharacters(&valid_charset)}.expect("e"); // /Volumes/Untitled/%C2%83s
+  let string_pc	:Ret<NSString>	= unsafe{url_path.stringByAddingPercentEncodingWithAllowedCharacters(&NSCharacterSet::URLPathAllowedCharacterSet())}.expect("e"); // /Volumes/Untitled/%C3%B8
   let url_p    	:Ret<NSURL   >	= unsafe{NSURL::fileURLWithPath(&url_path ) }	;
   let url_s    	:Ret<NSURL   >	= unsafe{NSURL::fileURLWithPath(&string_pc) }	;
   let res_p    	              	= unsafe{file_mgr.trashItemAtURL_resultingItemURL_error(&url_p, None) };// file “\u{83}s” doesn’t exist
@@ -218,7 +317,8 @@ println!("NSURL from nsdata URLWithDataRepresentation_relativeToURL:\nurl_d={url
   // res_s=The file “%C2%83s” doesn’t exist.
   // res_p=The file “s” doesn’t exist.
   // called `Result::unwrap()` on an `Err` value: Unknown { description: "While deleting '\"/Volumes/Untitled/ピ\"', `trashItemAtURL` failed: The file “\u{83}s” doesn’t exist." }
-
+/*
+*/
   // path="/Volumes/Untitled/\u{83}s"
 
         // let new_s:Allocated<NSString> = NSString::alloc();
@@ -234,6 +334,7 @@ println!("NSURL from nsdata URLWithDataRepresentation_relativeToURL:\nurl_d={url
           // let encoding_invalid_characters = true;
           // let url = unsafe { NSURL::URLWithString_encodingInvalidCharacters(&string, encoding_invalid_characters) }.expect("sadfsdf");
 
+/*
         trace!("Starting fileURLWithPath");
         // let url = unsafe { NSURL::fileURLWithPath(&string) };
         // println!("NSURL: {:?}",url);
@@ -248,6 +349,7 @@ println!("NSURL from nsdata URLWithDataRepresentation_relativeToURL:\nurl_d={url
                 description: format!("While deleting '{:?}', `trashItemAtURL` failed: {err}",path.as_ref()),
             });
         }
+*/
     }
     Ok(())
 }
