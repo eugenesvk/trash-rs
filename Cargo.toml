@@ -39,6 +39,10 @@ objc2-foundation = { version = "0.2.0", features = [
     "NSFileManager",
     "NSString",
     "NSURL",
+    "NSCharacterSet",
+    "NSData",
+    "NSEnumerator",
+    "NSArray",
 ] }
 
 [target.'cfg(all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))'.dependencies]
