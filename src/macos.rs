@@ -150,6 +150,36 @@ pub fn delete_using_file_mgr_oss<P:AsRef<Path>>(full_paths: &[P]) -> Result<(), 
         // // 3 OK
         // let string:Retained<NSString> = unsafe {file_mgr.stringWithFileSystemRepresentation_length(nncstring, cstring_len)};
 
+// URL from CString via fileURLWithFileSystemRepresentation_isDirectory_relativeToURL
+  // FAILS
+  let path_b:&[u8] = b"/Volumes/Untitled/\xf8";
+  let path_os:&OsStr = OsStr::from_bytes(&path_b);
+  let path_b:&[u8] = path_os.as_bytes();
+  // OK
+  let path_os:&OsStr = OsStr::new("/Volumes/Untitled/%F8");
+  let path_b:&[u8] = path_os.as_bytes();
+
+  // OK (different valid utf-8 string)
+  let path_os:&OsStr = OsStr::new("/Volumes/Untitled/ピ");
+  let path_b:&[u8] = path_os.as_bytes();
+
+
+  // same in both cases
+  let mut p:PathBuf = PathBuf::new(); p.push(path_os); let path_p = p;
+  if path_p.is_file() {println!("path_os is a file! {:?}",path_os);}
+  let cstring = CString::new(path_b).expect("CString::new failed to create from given path");
+  let cstring_len = cstring.count_bytes();
+  println!("pre={:?}\nc{}={:?}",&path_os,cstring_len,&cstring);
+  let nncstring = NonNull::new(cstring.into_raw()).expect("REASON");
+  let is_dir = false;
+  let url_s = unsafe{NSURL::fileURLWithFileSystemRepresentation_isDirectory_relativeToURL(nncstring,is_dir,None)};
+  // println!("fileURLWithFileSystemRepresentation_isDirectory_relativeToURL\n{url:?}",);
+
+  let res_s = unsafe{file_mgr.trashItemAtURL_resultingItemURL_error(&url_s, None) };//
+  let err_s = match res_s {Ok(())=>format!("ok"), Err(err)=>format!("{err}"),};
+  println!("fileURLWithFileSystemRepresentation_isDirectory_relativeToURL:\nurl_s={url_s:?}\n\nres_s={err_s}");
+
+
 // todo: still fails with pjis
         // let pre:&str = "/Volumes/Untitled/ピ";
         // let bja8 = [0xe3,0x83,0x94]; //227 131 148
@@ -249,7 +279,7 @@ fn fileURLWithPath(path: &NSString) -> Retained<NSURL>
  */
 
 
-
+/*
   let bdia:&[u8] = b"\xf8"; //248 ø
   // let bdia = b"\x80"; // 128 lone continuation byte (invalid utf8)
   let dia:&OsStr = OsStr::from_bytes(bdia);
@@ -263,7 +293,7 @@ fn fileURLWithPath(path: &NSString) -> Retained<NSURL>
   // code point	character	UTF-8(hex.)	name
   // U+00F8    	ø        	c3 b8      	LATIN SMALL LETTER O WITH STROKE
   let nsdata   	:Ret<NSData  >	= NSData::with_bytes(&prenbpdia)                                       	;
-
+*/
 
   // let nstypeid = NSString::from_str("NSString");
   // let nss = unsafe{NSString::objectWithItemProviderData_typeIdentifier_error(&nsdata,&nstypeid)};
@@ -278,7 +308,7 @@ fn fileURLWithPath(path: &NSString) -> Retained<NSURL>
 
 
 
-
+/*
   let url_d    	:Ret<NSURL   >	= unsafe{NSURL::URLWithDataRepresentation_relativeToURL(&nsdata,None) }	;// /Volumes/Untitled/%C2%83s
   let url_path 	:Ret<NSString>	= unsafe{url_d.path()}.expect("p")                                     	;// /Volumes/Untitled/\u{83}s
   let string_pc	:Ret<NSString>	= unsafe{url_path.stringByAddingPercentEncodingWithAllowedCharacters(&NSCharacterSet::URLPathAllowedCharacterSet())}.expect("e"); // /Volumes/Untitled/%C3%B8
@@ -317,8 +347,10 @@ println!("NSURL from nsdata URLWithDataRepresentation_relativeToURL:\nurl_d={url
   // res_s=The file “%C2%83s” doesn’t exist.
   // res_p=The file “s” doesn’t exist.
   // called `Result::unwrap()` on an `Err` value: Unknown { description: "While deleting '\"/Volumes/Untitled/ピ\"', `trashItemAtURL` failed: The file “\u{83}s” doesn’t exist." }
+*/
 /*
 */
+/*
   // path="/Volumes/Untitled/\u{83}s"
 
         // let new_s:Allocated<NSString> = NSString::alloc();
@@ -334,7 +366,6 @@ println!("NSURL from nsdata URLWithDataRepresentation_relativeToURL:\nurl_d={url
           // let encoding_invalid_characters = true;
           // let url = unsafe { NSURL::URLWithString_encodingInvalidCharacters(&string, encoding_invalid_characters) }.expect("sadfsdf");
 
-/*
         trace!("Starting fileURLWithPath");
         // let url = unsafe { NSURL::fileURLWithPath(&string) };
         // println!("NSURL: {:?}",url);
