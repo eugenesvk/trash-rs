@@ -51,6 +51,8 @@ mod platform;
 
 #[cfg(target_os = "macos")]
 pub mod macos;
+#[cfg(all(target_os = "macos",test))]
+mod test_macos;
 #[cfg(target_os = "macos")]
 use macos as platform;
 
