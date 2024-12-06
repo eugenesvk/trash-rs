@@ -12,13 +12,21 @@ use crate::{into_unknown, Error, TrashContext};
 #[derive(Copy, Clone, Debug)]
 /// There are 2 ways to trash files: via the ≝Finder app or via the OS NsFileManager call
 ///
+
 ///   | <br>Feature            |≝<br>Finder     |<br>NsFileManager |
+
 ///   |:-----------------------|:--------------:|:----------------:|
+
 ///   |Undo via "Put back"     | ✓              | ✗                |
+
 ///   |Speed                   | ✗<br>Slower    | ✓<br>Faster      |
+
 ///   |No sound                | ✗              | ✓                |
+
 ///   |No extra permissions    | ✗              | ✓                |
+
 ///
+
 pub enum DeleteMethod {
     /// Use an `osascript`, asking the Finder application to delete the files.
     ///
@@ -81,7 +89,6 @@ impl TrashContext {
         }
     }
 }
-
 fn delete_using_file_mgr<P: AsRef<Path>>(full_paths: &[P]) -> Result<(), Error> {
     trace!("Starting delete_using_file_mgr");
     let file_mgr = unsafe { NSFileManager::defaultManager() };
@@ -108,7 +115,6 @@ fn delete_using_file_mgr<P: AsRef<Path>>(full_paths: &[P]) -> Result<(), Error> 
     }
     Ok(())
 }
-
 fn delete_using_finder<P: AsRef<Path>>(full_paths: &[P]) -> Result<(), Error> {
     // AppleScript command to move files (or directories) to Trash looks like
     //   osascript -e 'tell application "Finder" to delete { POSIX file "file1", POSIX "file2" }'
@@ -151,9 +157,10 @@ fn delete_using_finder<P: AsRef<Path>>(full_paths: &[P]) -> Result<(), Error> {
     }
     Ok(())
 }
-
 /// std's from_utf8_lossy, but non-utf8 byte sequences are %-encoded instead of being replaced by a special symbol.
+
 /// Valid utf8, including `%`, are not escaped.
+
 use std::borrow::Cow;
 fn percent_encode(input: &[u8]) -> Cow<'_, str> {
     use percent_encoding::percent_encode_byte as b2pc;
@@ -178,4 +185,20 @@ fn percent_encode(input: &[u8]) -> Cow<'_, str> {
         }
     }
     Cow::Owned(res)
+}
+/// Escapes `"` or `\` with `\` for use in AppleScript text
+
+fn esc_quote(s: &str) -> Cow<'_, str> {
+  if s.contains(&['"','\\']) {
+    let mut r = String::with_capacity(s.len());
+    let chars = s.chars();
+    for c in chars { match c {
+       '"'
+      |'\\' => {r.push('\\');r.push(c);}, // escapes quote/escape char
+      _     => {             r.push(c);}, // no escape required
+    }};
+    Cow::Owned   (r)
+  } else {
+    Cow::Borrowed(s)
+  }
 }
