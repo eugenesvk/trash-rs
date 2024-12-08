@@ -53,6 +53,16 @@ pub enum DeleteMethod {
     /// - Does *not* show the "Put Back" option, BUT (TBD) could support a custom one.
     Direct,
 }
+use crate::fmt;
+impl fmt::Display for DeleteMethod {
+    fn fmt(&self, f:&mut fmt::Formatter) -> fmt::Result {
+        match self {
+            DeleteMethod::Finder        => write!(f,"Finder"),
+            DeleteMethod::NsFileManager => write!(f,"NsFileManager"),
+            DeleteMethod::Direct        => write!(f,"Direct"),
+        }
+    }
+}
 impl DeleteMethod {
     /// Returns `DeleteMethod::Finder`
     pub const fn new() -> Self {
