@@ -224,8 +224,8 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
             // since paths can have any char, use " /// " triple path separator for parsing ouput of list paths
             format!(
                 r#"
-            (() => {
-                function posixPath(url) {return $.NSURL.alloc.initWithString(url).fileSystemRepresentation}
+            (() => {{
+                function posixPath(url) {{return $.NSURL.alloc.initWithString(url).fileSystemRepresentation}}
 
                 const app = Application("Finder");
                 app.includeStandardAdditions = true; // which methods does this bring?
@@ -234,30 +234,35 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
                 let Trash_items = [];
 
                 // TODO: how to get path to the trashed item?
-                //if (paths.length > 0) {paths.forEach((i) => { Trash_items.push(app.delete(i)) });}
-                if (paths.length > 0) {paths.forEach((i) => { app.delete(i); });}
+                //if (paths.length > 0) {{paths.forEach((i) => {{ Trash_items.push(app.delete(i)) }});}}
+                if (paths.length > 0) {{paths.forEach((i) => {{ app.delete(i); }});}}
 
                 return Trash_items.join("{LIST_SEP}"") // hopefully no legal path can have this
-            })();
+            }})();
             "#
             )
         } else {
             format!(
                 r#"
-            (() => {
-                function posixPath(url) {return $.NSURL.alloc.initWithString(url).fileSystemRepresentation}
+            (() => {{
+                function posixPath(url) {{return $.NSURL.alloc.initWithString(url).fileSystemRepresentation}}
 
                 const app = Application("Finder");
                 app.includeStandardAdditions = true; // which methods does this bring?
 
                 const paths = [{posix_files}];
                 let Trash_items = [];
+                //let Trash_items = paths;
+                console.log("sdfsadfdsa");
 
                 // TODO: how to get path to the trashed item?
-                //if (paths.length > 0) {paths.forEach((i) => { Trash_items.push(app.delete(i)) });}
-                if (paths.length > 0) {paths.forEach((i) => { app.delete(i); });}
+                //if (paths.length > 0) {{paths.forEach((i) => {{ Trash_items.push(app.delete(i)) }});}}
+                //if (paths.length > 0) {{paths.forEach((i) => {{ app.delete(i); }});}}
+                //return Trash_items
+                const selection = app.selection();
+                if (selection.length > 0) {{selection.forEach((i) => {{let x = posixPath(i.url()); Trash_items.push(x);}});}}
                 return Trash_items
-            })();
+            }})();
             "#
             )
         }
@@ -265,13 +270,13 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
         // no ouput parsing required, so script is the same for Cli and Osakit
         format!(
             r#"
-            (() => {
+            (() => {{
               const app = Application("Finder");
               app.includeStandardAdditions = true;
               let paths = [{posix_files}];
-              if (paths.length > 0) {paths.forEach((i) => {app.delete(i)});
+              if (paths.length > 0) {{paths.forEach((i) => {{app.delete(i)}});
               return ""
-            })();
+            }})();
                 "#
         )
     };
