@@ -432,6 +432,75 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
     Ok(None)
 }
 
+// TODO: stub from delete_using_file_mgr
+fn delete_directly<P: AsRef<Path>>(full_paths: &[P], with_info: bool) -> Result<Option<Vec<TrashItem>>, Error> {
+    trace!("Starting delete_directly");
+    let file_mgr = unsafe { NSFileManager::defaultManager() };
+    let mut items = if with_info { Vec::with_capacity(full_paths.len()) } else { vec![] };
+    for path in full_paths {
+        let path_r = path.as_ref();
+        let path = path_r.as_os_str().as_encoded_bytes();
+        let path = match std::str::from_utf8(path) {
+            Ok(path_utf8) => NSString::from_str(path_utf8), // utf-8 path, use as is
+            Err(_) => NSString::from_str(&percent_encode(path)), // binary path, %-encode it
+        };
+
+        trace!("Starting fileURLWithPath");
+        let url = unsafe { NSURL::fileURLWithPath(&path) };
+        trace!("Finished fileURLWithPath");
+
+        trace!("Calling trashItemAtURL");
+        let mut out_res_nsurl: Option<Retained<NSURL>> = None;
+        let res = if with_info {
+            unsafe { file_mgr.trashItemAtURL_resultingItemURL_error(&url, Some(&mut out_res_nsurl)) }
+        } else {
+            unsafe { file_mgr.trashItemAtURL_resultingItemURL_error(&url, None) }
+        };
+        trace!("Finished trashItemAtURL");
+
+        if let Err(err) = res {
+            return Err(Error::Unknown {
+                description: format!("While deleting '{:?}', `trashItemAtURL` failed: {err}", path),
+            });
+        } else if with_info {
+            if let Some(out_nsurl) = out_res_nsurl {
+                #[allow(unused_assignments)]
+                let mut time_deleted = -1;
+                #[cfg(feature = "chrono")]
+                {
+                    let now = chrono::Local::now();
+                    time_deleted = now.timestamp();
+                }
+                #[cfg(not(feature = "chrono"))]
+                {
+                    time_deleted = -1;
+                }
+                if let Some(nspath) = unsafe { out_nsurl.path() } {
+                    // Option<Retained<NSString>>
+                    items.push(TrashItem {
+                        id: nspath.to_string().into(),
+                        name: path_r.file_name().expect("Item to be trashed should have a name").into(),
+                        original_parent: path_r
+                            .parent()
+                            .expect("Item to be trashed should have a parent")
+                            .to_path_buf(),
+                        time_deleted,
+                    });
+                } else {
+                    warn!("OS did not return path string from the URL of the trashed item '{:?}', originally located at: '{:?}'", out_nsurl, path);
+                }
+            } else {
+                warn!("OS did not return a path to the trashed file, originally located at: '{:?}'", path);
+            }
+        }
+    }
+    if with_info {
+        Ok(Some(items))
+    } else {
+        Ok(None)
+    }
+}
+
 /// std's from_utf8_lossy, but non-utf8 byte sequences are %-encoded instead of being replaced by a special symbol.
 /// Valid utf8, including `%`, are not escaped.
 use std::borrow::Cow;
