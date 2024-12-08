@@ -101,14 +101,42 @@ impl Default for ScriptMethod {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+/// When trashing items directly, store the original path to enable undo in items' extended attributes or in the `.DS_store` data file,
+/// the latter is used by Finder to enable "Put Back".
+pub enum UndoInfo {
+    /// Spawn a process calling the standalone `osascript` binary to run AppleScript. Slower, but more reliable.
+    ///
+    /// This is the default.
+    Xattr,
+
+    /// Update the `.DS_store` database file in trash, enabling Finder's "Put Back" functionality
+    /// NOT IMPLEMENTED
+    ///
+    DsStore,
+}
+impl UndoInfo {
+    /// Returns `UndoInfo::Xattr`
+    pub const fn new() -> Self {
+        UndoInfo::Xattr
+    }
+}
+impl Default for UndoInfo {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+
 #[derive(Clone, Default, Debug)]
 pub struct PlatformTrashContext {
     delete_method: DeleteMethod,
     script_method: ScriptMethod,
+    undo_info: UndoInfo,
 }
 impl PlatformTrashContext {
     pub const fn new() -> Self {
-        Self { delete_method: DeleteMethod::new(), script_method: ScriptMethod::new() }
+        Self { delete_method: DeleteMethod::new(), script_method: ScriptMethod::new(), undo_info: UndoInfo::new() }
     }
 }
 pub trait TrashContextExtMacos {
@@ -116,6 +144,8 @@ pub trait TrashContextExtMacos {
     fn delete_method(&self) -> DeleteMethod;
     fn set_script_method(&mut self, method: ScriptMethod);
     fn script_method(&self) -> ScriptMethod;
+    fn set_undo_info(&mut self, info: UndoInfo);
+    fn undo_info(&self) -> UndoInfo;
 }
 impl TrashContextExtMacos for TrashContext {
     fn set_delete_method(&mut self, method: DeleteMethod) {
@@ -130,6 +160,12 @@ impl TrashContextExtMacos for TrashContext {
     fn script_method(&self) -> ScriptMethod {
         self.platform_specific.script_method
     }
+    fn set_undo_info(&mut self, info: UndoInfo) {
+        self.platform_specific.undo_info = info;
+    }
+    fn undo_info(&self) -> UndoInfo {
+        self.platform_specific.undo_info
+    }
 }
 impl TrashContext {
     pub(crate) fn delete_all_canonicalized(
@@ -143,7 +179,10 @@ impl TrashContext {
                 ScriptMethod::Osakit => delete_using_finder(&full_paths, with_info, false),
             },
             DeleteMethod::NsFileManager => delete_using_file_mgr(&full_paths, with_info),
-            DeleteMethod::Direct => delete_directly(&full_paths, with_info),
+            DeleteMethod::Direct => match self.platform_specific.undo_info {
+                UndoInfo::Xattr => delete_directly(&full_paths, with_info, true),
+                UndoInfo::DsStore => delete_directly(&full_paths, with_info, false),
+            },
         }
     }
 }
@@ -433,7 +472,7 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
 }
 
 // TODO: stub from delete_using_file_mgr
-fn delete_directly<P: AsRef<Path>>(full_paths: &[P], with_info: bool) -> Result<Option<Vec<TrashItem>>, Error> {
+fn delete_directly<P: AsRef<Path>>(full_paths: &[P], with_info: bool, _is_xattr: bool) -> Result<Option<Vec<TrashItem>>, Error> {
     trace!("Starting delete_directly");
     let file_mgr = unsafe { NSFileManager::defaultManager() };
     let mut items = if with_info { Vec::with_capacity(full_paths.len()) } else { vec![] };
