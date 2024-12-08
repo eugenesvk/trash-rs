@@ -10,15 +10,16 @@ use objc2_foundation::{NSFileManager, NSString, NSURL};
 use crate::{Error, TrashContext, TrashItem};
 
 #[derive(Copy, Clone, Debug)]
-/// There are 2 ways to trash files: via the ≝Finder app or via the OS NsFileManager call
+/// There are 3 ways to trash files: via the ≝Finder app, OS NsFileManager call, or directly
 ///
-///   | <br>Feature            |≝<br>Finder     |<br>NsFileManager |
-///   |:-----------------------|:--------------:|:----------------:|
-///   |Undo via "Put back"     | ✓              | ✗                |
-///   |Get trashed paths       | ✗              | ✓                |
-///   |Speed                   | ✗<br>Slower    | ✓<br>Faster      |
-///   |No sound                | ✗              | ✓                |
-///   |No extra permissions    | ✗              | ✓                |
+///   | <br>Feature            |≝<br>Finder     |<br>NsFileManager |<br>Directly      |
+///   |:-----------------------|:--------------:|:----------------:|:----------------:|
+///   |Undo via "Put back"     | ✓              | ✗                | ✗                |
+///   |Undo via this lib       | ✗              | ✗                | ✓ TBD            |
+///   |Get trashed paths       | ✗              | ✓                | ✓                |
+///   |Speed                   | ✗<br>Slower    | ✓<br>Faster      | ✓<br>Faster      |
+///   |No sound                | ✗              | ✓                | ✓                |
+///   |No extra permissions    | ✗              | ✓                | ✓                |
 ///
 pub enum DeleteMethod {
     /// Use an `osascript`, asking the Finder application to delete the files.
@@ -42,6 +43,15 @@ pub enum DeleteMethod {
     ///   - <https://github.com/ArturKovacs/trash-rs/issues/14>
     /// - Allows getting the paths to the trashed items
     NsFileManager,
+
+    /// Use Rust std library to delete the files, storing original paths as extended attributes.
+    /// (TBD: alternatively could update the `.DS_Store` database directly)
+    ///
+    /// - Somewhat faster than the `Finder` method
+    /// - Does *not* require additional permissions
+    /// - Does *not* produce the sound that Finder usually makes when deleting a file
+    /// - Does *not* show the "Put Back" option, BUT (TBD) could support a custom one.
+    Direct,
 }
 impl DeleteMethod {
     /// Returns `DeleteMethod::Finder`
@@ -123,6 +133,7 @@ impl TrashContext {
                 ScriptMethod::Osakit => delete_using_finder(&full_paths, with_info, false),
             },
             DeleteMethod::NsFileManager => delete_using_file_mgr(&full_paths, with_info),
+            DeleteMethod::Direct => delete_directly(&full_paths, with_info),
         }
     }
 }
