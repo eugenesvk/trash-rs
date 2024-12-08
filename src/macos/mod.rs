@@ -61,7 +61,7 @@ impl Default for DeleteMethod {
 /// so the default is `osascript`.
 ///
 pub enum ScriptMethod {
-    /// Spawn a process calling the standalone `osascript` binary to run AppleScript. Slower, but more reliable.
+    /// Spawn a process calling the standalone `osascript` binary to run JXA. Slower, but more reliable.
     ///
     /// This is the default.
     Cli,
@@ -211,8 +211,8 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
         .map(|p| {
             let path_b = p.as_ref().as_os_str().as_encoded_bytes();
             match std::str::from_utf8(path_b) {
-                Ok(path_utf8) => format!(r#"POSIX file "{}""#, esc_quote(path_utf8)), // utf-8 path, escape \"
-                Err(_) => format!(r#"POSIX file "{}""#, esc_quote(&percent_encode(path_b))), // binary path, %-encode it and escape \"
+                Ok(path_utf8) => format!(r#""{}""#, esc_quote(path_utf8)), // utf-8 path, escape \"
+                Err(_) => format!(r#""{}""#, esc_quote(&percent_encode(path_b))), // binary path, %-encode it and escape \"
             }
         })
         .collect::<Vec<String>>()
@@ -224,40 +224,55 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
             // since paths can have any char, use " /// " triple path separator for parsing ouput of list paths
             format!(
                 r#"
-            tell application "Finder"
-                set Trash_items to delete {{ {posix_files} }}
-            end tell
-            if (class of Trash_items) is not list then -- if only 1 file is deleted, returns a file, not a list
-                return                   (POSIX path of (Trash_items as alias))
-            end if
-            repeat with aFile in Trash_items -- Finder reference
-                set contents of aFile to (POSIX path of (aFile as alias)) -- can't get paths of Finder reference, coersion to alias needed
-            end repeat
-            set text item delimiters to "{LIST_SEP}" -- hopefully no legal path can have this
-            return Trash_items as text -- coersion to text forces item delimiters for lists
+            (() => {
+                function posixPath(url) {return $.NSURL.alloc.initWithString(url).fileSystemRepresentation}
+
+                const app = Application("Finder");
+                app.includeStandardAdditions = true; // which methods does this bring?
+
+                const paths = [{posix_files}];
+                let Trash_items = [];
+
+                // TODO: how to get path to the trashed item?
+                //if (paths.length > 0) {paths.forEach((i) => { Trash_items.push(app.delete(i)) });}
+                if (paths.length > 0) {paths.forEach((i) => { app.delete(i); });}
+
+                return Trash_items.join("{LIST_SEP}"") // hopefully no legal path can have this
+            })();
             "#
             )
         } else {
             format!(
                 r#"
-            tell application "Finder"
-                set Trash_items to delete {{ {posix_files} }}
-            end tell
-            if (class of Trash_items) is not list then -- if only 1 file is deleted, returns a file, not a list
-                return                   (POSIX path of (Trash_items as alias))
-            end if
-            repeat with aFile in Trash_items -- Finder reference
-                set contents of aFile to (POSIX path of (aFile as alias)) -- can't get paths of Finder reference, coersion to alias needed
-            end repeat
-            return Trash_items
+            (() => {
+                function posixPath(url) {return $.NSURL.alloc.initWithString(url).fileSystemRepresentation}
+
+                const app = Application("Finder");
+                app.includeStandardAdditions = true; // which methods does this bring?
+
+                const paths = [{posix_files}];
+                let Trash_items = [];
+
+                // TODO: how to get path to the trashed item?
+                //if (paths.length > 0) {paths.forEach((i) => { Trash_items.push(app.delete(i)) });}
+                if (paths.length > 0) {paths.forEach((i) => { app.delete(i); });}
+                return Trash_items
+            })();
             "#
             )
         }
     } else {
         // no ouput parsing required, so script is the same for Cli and Osakit
         format!(
-            r#"tell application "Finder" to delete {{ {posix_files} }}
-                return "" "#
+            r#"
+            (() => {
+              const app = Application("Finder");
+              app.includeStandardAdditions = true;
+              let paths = [{posix_files}];
+              if (paths.length > 0) {paths.forEach((i) => {app.delete(i)});
+              return ""
+            })();
+                "#
         )
     };
     use osakit::{Language, Script};
@@ -288,7 +303,7 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
                 if !file_list.is_empty() {
                     let len_match = full_paths.len() == file_list.len();
                     if !len_match {
-                        warn!("AppleScript returned a list of trashed paths len {} ≠ {} expected items sent to be trashed, so trashed items will have empty names/original parents as we can't be certain which trash path matches which trashed item",full_paths.len(),file_list.len());
+                        warn!("JXA returned a list of trashed paths len {} ≠ {} expected items sent to be trashed, so trashed items will have empty names/original parents as we can't be certain which trash path matches which trashed item",full_paths.len(),file_list.len());
                     }
                     for (i, file_path) in file_list.iter().enumerate() {
                         let path_r = if len_match { full_paths[i].as_ref() } else { Path::new("") };
@@ -310,7 +325,7 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
                     return Ok(Some(items));
                 } else {
                     let ss = if full_paths.len() > 1 { "s" } else { "" };
-                    warn!("AppleScript did not return a list of path{} to the trashed file{}, originally located at: {:?}",&ss,&ss,&full_paths);
+                    warn!("JXA did not return a list of path{} to the trashed file{}, originally located at: {:?}",&ss,&ss,&full_paths);
                 }
             }
         } else {
@@ -318,21 +333,21 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
             match result.status.code() {
                 None => {
                     return Err(Error::Unknown {
-                        description: format!("The AppleScript exited with error. stderr: {}", stderr),
+                        description: format!("The JXA exited with error. stderr: {}", stderr),
                     })
                 }
 
                 Some(code) => {
                     return Err(Error::Os {
                         code,
-                        description: format!("The AppleScript exited with error. stderr: {}", stderr),
+                        description: format!("The JXA exited with error. stderr: {}", stderr),
                     })
                 }
             };
         }
     } else {
         // use Osakit
-        let mut script = Script::new_from_source(Language::AppleScript, &script_text);
+        let mut script = Script::new_from_source(Language::JavaScript, &script_text);
 
         // Compile and Execute script
         match script.compile() {
@@ -359,7 +374,7 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
                         if let Some(file_list) = res_arr.as_array() {
                             let len_match = full_paths.len() == file_list.len();
                             if !len_match {
-                                warn!("AppleScript returned a list of trashed paths len {} ≠ {} expected items sent to be trashed, so trashed items will have empty names/original parents as we can't be certain which trash path matches which trashed item",full_paths.len(),file_list.len());
+                                warn!("JXA returned a list of trashed paths len {} ≠ {} expected items sent to be trashed, so trashed items will have empty names/original parents as we can't be certain which trash path matches which trashed item",full_paths.len(),file_list.len());
                             }
                             for (i, posix_path) in file_list.iter().enumerate() {
                                 if let Some(file_path) = posix_path.as_str() {
@@ -387,7 +402,7 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
                                     });
                                 } else {
                                     warn!(
-                                        "Failed to parse AppleScript's returned path to the trashed file: {:?}",
+                                        "Failed to parse JXA's returned path to the trashed file: {:?}",
                                         &posix_path
                                     );
                                 }
@@ -395,17 +410,17 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
                             return Ok(Some(items));
                         } else {
                             let ss = if full_paths.len() > 1 { "s" } else { "" };
-                            warn!("AppleScript did not return a list of path{} to the trashed file{}, originally located at: {:?}",&ss,&ss,&full_paths);
+                            warn!("JXA did not return a list of path{} to the trashed file{}, originally located at: {:?}",&ss,&ss,&full_paths);
                         }
                     }
                 }
                 Err(e) => {
-                    return Err(Error::Unknown { description: format!("The AppleScript failed with error: {}", e) })
+                    return Err(Error::Unknown { description: format!("The JXA failed with error: {}", e) })
                 }
             },
             Err(e) => {
                 return Err(Error::Unknown {
-                    description: format!("The AppleScript failed to compile with error: {}", e),
+                    description: format!("The JXA failed to compile with error: {}", e),
                 })
             }
         }
@@ -441,7 +456,7 @@ fn percent_encode(input: &[u8]) -> Cow<'_, str> {
     Cow::Owned(res)
 }
 
-/// Escapes `"` or `\` with `\` for use in AppleScript text
+/// Escapes `"` or `\` with `\` for use in JXA text
 fn esc_quote(s: &str) -> Cow<'_, str> {
     if s.contains(['"', '\\']) {
         let mut r = String::with_capacity(s.len());
