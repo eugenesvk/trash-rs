@@ -29,7 +29,7 @@
 //! distribution it runs on, follows this specification.
 //!
 
-use std::ffi::OsString;
+use std::ffi::{OsStr,OsString};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
@@ -81,16 +81,33 @@ impl TrashContext {
     /// trash::delete("delete_me").unwrap();
     /// assert!(File::open("delete_me").is_err());
     /// ```
-    pub fn delete<T: AsRef<Path>>(&self, path: T) -> Result<Option<Vec<TrashItem>>, Error> {
+    pub fn delete<T: AsRef<Path>>(&self, path: T) -> Result<Option<TrashTrie>, Error> {
         self.delete_all(&[path])
     }
 
     /// Same as `delete`, but returns `TrashItem` if available.
     pub fn delete_with_info<T: AsRef<Path>>(&self, path: T) -> Result<Option<TrashItem>, Error> {
         match self.delete_all_with_info(&[path]) {
-            // Result<Option<Vec<TrashItem>>>
+            // Result<Option<TrashTrie>>
             Ok(maybe_items) => match maybe_items {
-                Some(mut items) => Ok(items.pop()), // no need to check that vec.len=2?
+                Some(items) => {
+                    if   items.is_empty() { Ok(None)
+                    } else if items.count() > 1 { Err(Error::Unknown {description: format!("Expected 1 trashed item for 1 deleted path, but got {} instead.",items.count()).into()})
+                    } else {
+                        for (key, value) in items.into_iter() {
+                            // SAFETY: `key` was a a result of `OsStr::as_encoded_bytes`, so safe to convert back
+                            let s: OsString = unsafe { OsStr::from_encoded_bytes_unchecked(&key).into() };
+                            let p = PathBuf::from(s);
+                            return Ok(Some(TrashItem {
+                                id: OsString::from(value.0),
+                                name: p.file_name().expect("Item to be trashed should have a name").into(),
+                                original_parent: p.parent().expect("Item to be trashed should have a parent").to_path_buf(),
+                                time_deleted: value.1, // ↑TODO: technically could be '/' that has no parent, but noone is going to trash '/'
+                            }));
+                        }
+                        Ok(None)
+                    }
+                },
                 None => Ok(None),
             },
             Err(e) => Err(e),
@@ -113,7 +130,7 @@ impl TrashContext {
     /// assert!(File::open("delete_me_1").is_err());
     /// assert!(File::open("delete_me_2").is_err());
     /// ```
-    pub fn delete_all<I, T>(&self, paths: I) -> Result<Option<Vec<TrashItem>>, Error>
+    pub fn delete_all<I, T>(&self, paths: I) -> Result<Option<TrashTrie>, Error>
     where
         I: IntoIterator<Item = T>,
         T: AsRef<Path>,
@@ -125,7 +142,7 @@ impl TrashContext {
     }
 
     /// Same as `delete_all, but returns `TrashItem`s if available.
-    pub fn delete_all_with_info<I, T>(&self, paths: I) -> Result<Option<Vec<TrashItem>>, Error>
+    pub fn delete_all_with_info<I, T>(&self, paths: I) -> Result<Option<TrashTrie>, Error>
     where
         I: IntoIterator<Item = T>,
         T: AsRef<Path>,
@@ -140,7 +157,7 @@ impl TrashContext {
 /// Convenience method for `DEFAULT_TRASH_CTX.delete()`.
 ///
 /// See: [`TrashContext::delete`](TrashContext::delete)
-pub fn delete<T: AsRef<Path>>(path: T) -> Result<Option<Vec<TrashItem>>, Error> {
+pub fn delete<T: AsRef<Path>>(path: T) -> Result<Option<TrashTrie>, Error> {
     DEFAULT_TRASH_CTX.delete(path)
 }
 
@@ -154,7 +171,7 @@ pub fn delete_with_info<T: AsRef<Path>>(path: T) -> Result<Option<TrashItem>, Er
 /// Convenience method for `DEFAULT_TRASH_CTX.delete_all()`.
 ///
 /// See: [`TrashContext::delete_all`](TrashContext::delete_all)
-pub fn delete_all<I, T>(paths: I) -> Result<Option<Vec<TrashItem>>, Error>
+pub fn delete_all<I, T>(paths: I) -> Result<Option<TrashTrie>, Error>
 where
     I: IntoIterator<Item = T>,
     T: AsRef<Path>,
@@ -165,7 +182,7 @@ where
 /// Convenience method for `DEFAULT_TRASH_CTX.delete_all_with_info()`.
 ///
 /// See: [`TrashContext::delete_all`](TrashContext::delete_all_with_info)
-pub fn delete_all_with_info<I, T>(paths: I) -> Result<Option<Vec<TrashItem>>, Error>
+pub fn delete_all_with_info<I, T>(paths: I) -> Result<Option<TrashTrie>, Error>
 where
     I: IntoIterator<Item = T>,
     T: AsRef<Path>,
@@ -298,6 +315,16 @@ where
         })
         .collect::<Result<Vec<_>, _>>()
 }
+
+use qp_trie::Trie;
+// TODO: key=original_path is more useful than key=trashed_path? Then you could query: which items were trashed from a specific parent prefix
+// BUT: original path isn't always available on a per-trashed-item basis, e.g., Finder trashes the whole list and returns a potentially different-sized list of trashed_path. (trashed_path might also be unavailable, but in this case the item is simply not part of the results)
+/// A [`trie/tree map`](qp_trie::Trie) of trashed items
+/// * key: Rust-encoded byte-vector of the original path[^1][^2], allowing easy queries for all paths with a given prefix.
+/// * value: a tuple of [`trashed path id`](TrashItem#structfield.id) and [`time_deleted`](TrashItem#structfield.time_deleted).
+/// [^1]: using `path.as_os_str().as_encoded_bytes()`, so it's safe to recover the path via `unsafe {OsStr::from_encoded_bytes_unchecked(key)}`
+/// [^2]: on macOS when batch-trashing with Finder if we can't match trashed path to the original paths, key is trashed path
+pub type TrashTrie = Trie<Vec<u8>,(PathBuf,i64)>;
 
 /// This struct holds information about a single item within the trash.
 ///
