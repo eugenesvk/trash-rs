@@ -170,8 +170,12 @@ fn delete_using_file_mgr<P: AsRef<Path>>(full_paths: &[P], with_info: bool) -> R
                 {
                     time_deleted = -1;
                 }
-                if let Some(nspath) = unsafe { out_nsurl.path() } { // Retained<NSString>
-                    items.insert(path_r.as_os_str().as_encoded_bytes().to_vec(), (nspath.to_string().into(),time_deleted));
+                if let Some(nspath) = unsafe { out_nsurl.path() } {
+                    // Retained<NSString>
+                    items.insert(
+                        path_r.as_os_str().as_encoded_bytes().to_vec(),
+                        (nspath.to_string().into(), time_deleted),
+                    );
                 } else {
                     warn!("OS did not return path string from the URL of the trashed item '{:?}', originally located at: '{:?}'", out_nsurl, path);
                 }
@@ -284,7 +288,7 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
                     }
                     for (i, file_path) in file_list.iter().enumerate() {
                         let path_r = if len_match { full_paths[i].as_ref() } else { file_path.as_ref() }; // key by trash path if can't match
-                        items.insert(path_r.as_os_str().as_encoded_bytes().to_vec(), (file_path.into(),time_deleted));
+                        items.insert(path_r.as_os_str().as_encoded_bytes().to_vec(), (file_path.into(), time_deleted));
                     }
                     return Ok(Some(items));
                 } else {
@@ -347,7 +351,10 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
                                     //println!("✓converted posix_path:{}
                                     //        \nexists {}           {:?}", posix_path, p.exists(),p);
                                     let path_r = if len_match { full_paths[i].as_ref() } else { file_path.as_ref() }; // key by trash path if can't match
-                                    items.insert(path_r.as_os_str().as_encoded_bytes().to_vec(), (file_path.into(),time_deleted));
+                                    items.insert(
+                                        path_r.as_os_str().as_encoded_bytes().to_vec(),
+                                        (file_path.into(), time_deleted),
+                                    );
                                 } else {
                                     warn!(
                                         "Failed to parse AppleScript's returned path to the trashed file: {:?}",
