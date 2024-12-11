@@ -7,7 +7,7 @@ use log::{trace, warn};
 use objc2::rc::Retained;
 use objc2_foundation::{NSFileManager, NSString, NSURL};
 
-use crate::{Error, TrashContext, TrashItem};
+use crate::{Error, TrashContext, TrashTrie};
 
 #[derive(Copy, Clone, Debug)]
 /// There are 2 ways to trash files: via the ≝Finder app or via the OS NsFileManager call
@@ -116,7 +116,7 @@ impl TrashContext {
         &self,
         full_paths: Vec<PathBuf>,
         with_info: bool,
-    ) -> Result<Option<Vec<TrashItem>>, Error> {
+    ) -> Result<Option<TrashTrie>, Error> {
         match self.platform_specific.delete_method {
             DeleteMethod::Finder => match self.platform_specific.script_method {
                 ScriptMethod::Cli => delete_using_finder(&full_paths, with_info, true),
@@ -127,10 +127,11 @@ impl TrashContext {
     }
 }
 
-fn delete_using_file_mgr<P: AsRef<Path>>(full_paths: &[P], with_info: bool) -> Result<Option<Vec<TrashItem>>, Error> {
+fn delete_using_file_mgr<P: AsRef<Path>>(full_paths: &[P], with_info: bool) -> Result<Option<TrashTrie>, Error> {
     trace!("Starting delete_using_file_mgr");
     let file_mgr = unsafe { NSFileManager::defaultManager() };
-    let mut items = if with_info { Vec::with_capacity(full_paths.len()) } else { vec![] };
+    let mut items = TrashTrie::new();
+    // if with_info { items.extend_reserve(full_paths.len())}; // nightly API,
     for path in full_paths {
         let path_r = path.as_ref();
         let path = path_r.as_os_str().as_encoded_bytes();
@@ -169,17 +170,8 @@ fn delete_using_file_mgr<P: AsRef<Path>>(full_paths: &[P], with_info: bool) -> R
                 {
                     time_deleted = -1;
                 }
-                if let Some(nspath) = unsafe { out_nsurl.path() } {
-                    // Option<Retained<NSString>>
-                    items.push(TrashItem {
-                        id: nspath.to_string().into(),
-                        name: path_r.file_name().expect("Item to be trashed should have a name").into(),
-                        original_parent: path_r
-                            .parent()
-                            .expect("Item to be trashed should have a parent")
-                            .to_path_buf(),
-                        time_deleted,
-                    });
+                if let Some(nspath) = unsafe { out_nsurl.path() } { // Retained<NSString>
+                    items.insert(path_r.as_os_str().as_encoded_bytes().to_vec(), (nspath.to_string().into(),time_deleted));
                 } else {
                     warn!("OS did not return path string from the URL of the trashed item '{:?}', originally located at: '{:?}'", out_nsurl, path);
                 }
@@ -199,11 +191,13 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
     full_paths: &[P],
     with_info: bool,
     as_cli: bool,
-) -> Result<Option<Vec<TrashItem>>, Error> {
+) -> Result<Option<TrashTrie>, Error> {
     // TODO: should we convert to trashing item by item instead of in batches to have a guaranteed match of input to output?
     // which method is faster?
     // what about with a lot of items? will a huge script combining all paths still work?
-    let mut items: Vec<TrashItem> = if with_info { Vec::with_capacity(full_paths.len()) } else { vec![] };
+    let mut items = TrashTrie::new();
+    // if with_info { items.extend_reserve(full_paths.len())}; // nightly API,
+
     let posix_files = full_paths
         .iter()
         .map(|p| {
@@ -268,7 +262,7 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
         let result = command.output().map_err(into_unknown)?;
         if result.status.success() {
             if with_info {
-                // parse stdout into a list of paths and convert to TrashItems
+                // parse stdout into a list of paths and convert to TrashTrie
                 #[allow(unused_assignments)]
                 let mut time_deleted = -1;
                 #[cfg(feature = "chrono")]
@@ -289,21 +283,8 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
                         warn!("AppleScript returned a list of trashed paths len {} ≠ {} expected items sent to be trashed, so trashed items will have empty names/original parents as we can't be certain which trash path matches which trashed item",full_paths.len(),file_list.len());
                     }
                     for (i, file_path) in file_list.iter().enumerate() {
-                        let path_r = if len_match { full_paths[i].as_ref() } else { Path::new("") };
-                        items.push(TrashItem {
-                            id: file_path.into(),
-                            name: if len_match {
-                                path_r.file_name().expect("Item to be trashed should have a name").into()
-                            } else {
-                                "".into()
-                            },
-                            original_parent: if len_match {
-                                path_r.parent().expect("Item to be trashed should have a parent").to_path_buf()
-                            } else {
-                                "".into()
-                            },
-                            time_deleted,
-                        });
+                        let path_r = if len_match { full_paths[i].as_ref() } else { file_path.as_ref() }; // key by trash path if can't match
+                        items.insert(path_r.as_os_str().as_encoded_bytes().to_vec(), (file_path.into(),time_deleted));
                     }
                     return Ok(Some(items));
                 } else {
@@ -365,24 +346,8 @@ fn delete_using_finder<P: AsRef<Path> + std::fmt::Debug>(
                                     //let p=PathBuf::from(file_path);
                                     //println!("✓converted posix_path:{}
                                     //        \nexists {}           {:?}", posix_path, p.exists(),p);
-                                    let path_r = if len_match { full_paths[i].as_ref() } else { Path::new("") };
-                                    items.push(TrashItem {
-                                        id: file_path.into(),
-                                        name: if len_match {
-                                            path_r.file_name().expect("Item to be trashed should have a name").into()
-                                        } else {
-                                            "".into()
-                                        },
-                                        original_parent: if len_match {
-                                            path_r
-                                                .parent()
-                                                .expect("Item to be trashed should have a parent")
-                                                .to_path_buf()
-                                        } else {
-                                            "".into()
-                                        },
-                                        time_deleted,
-                                    });
+                                    let path_r = if len_match { full_paths[i].as_ref() } else { file_path.as_ref() }; // key by trash path if can't match
+                                    items.insert(path_r.as_os_str().as_encoded_bytes().to_vec(), (file_path.into(),time_deleted));
                                 } else {
                                     warn!(
                                         "Failed to parse AppleScript's returned path to the trashed file: {:?}",
