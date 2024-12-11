@@ -57,8 +57,7 @@ mod test_main_thread_mac {
             let trashed_items = trash_ctx.delete_all_with_info(&[path1.clone(), path2.clone()]).unwrap().unwrap(); //Ok + Some trashed paths
             assert!(File::open(&path1).is_err()); // original files deleted
             assert!(File::open(&path2).is_err());
-            for item in trashed_items {
-                let trashed_path = item.id;
+            for (path_src_byte, (trashed_path, time_deleted)) in trashed_items {
                 assert!(!File::open(&trashed_path).is_err()); // returned trash items exist
                 std::fs::remove_file(&trashed_path).unwrap(); // clean   up
                 assert!(File::open(&trashed_path).is_err()); // cleaned up trash items
