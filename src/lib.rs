@@ -29,7 +29,7 @@
 //! distribution it runs on, follows this specification.
 //!
 
-use std::ffi::{OsStr,OsString};
+use std::ffi::{OsStr, OsString};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
@@ -91,8 +91,16 @@ impl TrashContext {
             // Result<Option<TrashTrie>>
             Ok(maybe_items) => match maybe_items {
                 Some(items) => {
-                    if   items.is_empty() { Ok(None)
-                    } else if items.count() > 1 { Err(Error::Unknown {description: format!("Expected 1 trashed item for 1 deleted path, but got {} instead.",items.count()).into()})
+                    if items.is_empty() {
+                        Ok(None)
+                    } else if items.count() > 1 {
+                        Err(Error::Unknown {
+                            description: format!(
+                                "Expected 1 trashed item for 1 deleted path, but got {} instead.",
+                                items.count()
+                            )
+                            .into(),
+                        })
                     } else {
                         for (key, value) in items.into_iter() {
                             // SAFETY: `key` was a a result of `OsStr::as_encoded_bytes`, so safe to convert back
@@ -101,13 +109,16 @@ impl TrashContext {
                             return Ok(Some(TrashItem {
                                 id: OsString::from(value.0),
                                 name: p.file_name().expect("Item to be trashed should have a name").into(),
-                                original_parent: p.parent().expect("Item to be trashed should have a parent").to_path_buf(),
+                                original_parent: p
+                                    .parent()
+                                    .expect("Item to be trashed should have a parent")
+                                    .to_path_buf(),
                                 time_deleted: value.1, // ↑TODO: technically could be '/' that has no parent, but noone is going to trash '/'
                             }));
                         }
                         Ok(None)
                     }
-                },
+                }
                 None => Ok(None),
             },
             Err(e) => Err(e),
@@ -324,7 +335,7 @@ use qp_trie::Trie;
 /// * value: a tuple of [`trashed path id`](TrashItem#structfield.id) and [`time_deleted`](TrashItem#structfield.time_deleted).
 /// [^1]: using `path.as_os_str().as_encoded_bytes()`, so it's safe to recover the path via `unsafe {OsStr::from_encoded_bytes_unchecked(key)}`
 /// [^2]: on macOS when batch-trashing with Finder if we can't match trashed path to the original paths, key is trashed path
-pub type TrashTrie = Trie<Vec<u8>,(PathBuf,i64)>;
+pub type TrashTrie = Trie<Vec<u8>, (PathBuf, i64)>;
 
 /// This struct holds information about a single item within the trash.
 ///
