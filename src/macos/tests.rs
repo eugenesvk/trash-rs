@@ -143,6 +143,39 @@ fn test_delete_binary_path_with_ns_file_manager_with_info() {
 
 #[test]
 #[serial]
+fn test_delete_with_ns_file_manager_with_info_trie() {
+    init_logging();
+    let mut trash_ctx = TrashContext::default();
+    trash_ctx.set_delete_method(DeleteMethod::NsFileManager);
+
+    let mut path1 = PathBuf::from("Users_u_Document_".to_owned() + get_unique_name());
+    let mut path2 = PathBuf::from("Users_u_Document_".to_owned() + get_unique_name());
+    let mut path3 = PathBuf::from("Users_u_Download_".to_owned() + get_unique_name());
+    path1.set_extension(get_unique_name());
+    path2.set_extension(get_unique_name());
+    path3.set_extension(get_unique_name());
+    File::create_new(&path1).unwrap();
+    File::create_new(&path2).unwrap();
+    File::create_new(&path3).unwrap();
+    assert!(&path1.exists());
+    assert!(&path2.exists());
+    assert!(&path3.exists());
+    let trashed_items_trie = trash_ctx.delete_all_with_info(&[path1.clone(), path2.clone(), path3.clone()]).unwrap().unwrap(); //Ok + Some trashed paths
+    assert!(File::open(&path1).is_err());
+    assert!(File::open(&path2).is_err());
+    assert!(File::open(&path3).is_err());
+
+    let prefix1 = "Users_u_Download_";
+
+    // for (path_src_byte, (trashed_path, time_deleted)) in trashed_items_trie {
+    //     assert!(!File::open(&trashed_path).is_err()); // returned trash items exist
+    //     std::fs::remove_file(&trashed_path).unwrap(); // clean   up
+    //     assert!(File::open(&trashed_path).is_err()); // cleaned up trash items
+    // }
+}
+
+#[test]
+#[serial]
 fn test_delete_binary_path_with_ns_file_manager() {
     let (_cleanup, tmp) = create_hfs_volume().unwrap();
     let parent_fs_supports_binary = tmp.path();
